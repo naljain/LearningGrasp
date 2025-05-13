@@ -1,6 +1,7 @@
 import numpy as np
 import json
-
+import subprocess
+import os
 
 config_path = "config.yml"
 ckpt_path = "step-000002000.ckpt"
@@ -52,4 +53,26 @@ with open("camera_path_test.json", "w") as f:
 print("Saved camera_path.json")
 
 
+def ns_render(config_path, json_path, output_path):
+    '''
+    ns-render camera-path --load-config outputs/mug_proc/f3rm/2025-05-11_152252/config.yml
+    --camera-path-filename ~/Downloads/camera_path\(3\).json
+    --output-path renders/mug_proc/2025-05-11_152252.mp4
+    --rendered-output-names feature
 
+    ffmpeg -i renders/mug_proc/2025-05-11_152252.mp4 out%d.png
+
+    '''
+    ns_command = [
+        "ns-render", "camera-path",
+        "--load-config", config_path,
+        "--camera-path-filename", json_path,
+        "--output-path", output_path,
+        "--rendered-output-names", "feature"
+    ]
+    ffmpeg_command = ["ffmeg", "-i", output_path, "out%d.png"]
+
+    print("Running ns-render...")
+    subprocess.run(ns_command)
+    print("Running ffmpeg")
+    subprocess.run(ffmpeg_command)
