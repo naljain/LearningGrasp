@@ -17,40 +17,40 @@ ckpt_path = "step-000002000.ckpt"
 #     [0, 0, 1]
 # ], dtype=torch.float32)
 
+def generate_camera_path_json(output_name, cam_to_world):
+    cam_to_world_matrices = [
+        np.array([
+            [0, 0, 0, 1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0.0, 0.0, 0.0, 1.0]
+        ]),
+    ]
 
-cam_to_world_matrices = [
-    np.array([
-        [0, 0, 0, 1],
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-        [0.0, 0.0, 0.0, 1.0]
-    ]),
-]
+    # Construct the JSON structure
+    camera_path_data = {
+        "camera_type": "perspective",
+        "render_height": 300,
+        "render_width": 300,
+        "camera_path": [],
+        "fps": 24,
+        "seconds": 0.1,
+        "smoothness_value": 0.5,
+        "is_cycle": False,
+        "crop": None
+    }
 
-# Construct the JSON structure
-camera_path_data = {
-    "camera_type": "perspective",
-    "render_height": 300,
-    "render_width": 300,
-    "camera_path": [],
-    "fps": 24,
-    "seconds": 0.1,
-    "smoothness_value": 0.5,
-    "is_cycle": False,
-    "crop": None
-}
+    for mat in cam_to_world_matrices:
+        camera_path_data["camera_path"].append({
+            "camera_to_world": mat.flatten().tolist(),  # Flatten to 16-element list
+            "fov": 50,
+            "aspect": 1.0
+        })
 
-for mat in cam_to_world_matrices:
-    camera_path_data["camera_path"].append({
-        "camera_to_world": mat.flatten().tolist(),  # Flatten to 16-element list
-        "fov": 50,
-        "aspect": 1.0
-    })
+    with open(output_name, "w") as f:
+        json.dump(camera_path_data, f, indent=2)
 
-with open("camera_path_test.json", "w") as f:
-    json.dump(camera_path_data, f, indent=2)
-
-print("Saved camera_path.json")
+    print("Saved camera_path.json")
 
 
 def ns_render(config_path, json_path, output_path):
