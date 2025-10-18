@@ -1,135 +1,221 @@
-import cv2 as cv
+# import c,v2
+import cv2
 import numpy as np
 
-# === Load Image ===
-image_name = "mug_proc/images/frame_00006.jpg"
-img = cv.imread(image_name)
+# Load Image
+image_name = "/home/matthew/data/nerfstudio/duck_proc/images/frame_00015.jpg"
+img = cv2.imread(image_name)
 if img is None:
     raise FileNotFoundError(f"Could not load image: {image_name}")
 
-grey_img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+# Convert to grayscale
+grey_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-# === AprilTag Detection ===
-aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_APRILTAG_36h11)
-parameters = cv.aruco.DetectorParameters()
-detector = cv.aruco.ArucoDetector(aruco_dict, parameters)
-corners, ids, _ = detector.detectMarkers(grey_img)
+# Contrast Enhancement
+clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+enhanced_img = clahe.apply(grey_img)
+
+# Initialize AprilTag detector
+aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
+parameters = cv2.aruco.DetectorParameters()
+detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+
+# Detect AprilTags
+corners, ids, _ = detector.detectMarkers(enhanced_img)
+print('corners are', corners)
 
 if ids is not None and len(corners) > 0:
-    for i, corner in enumerate(corners):
-        print(f"Tag ID: {ids[i][0]}")
-        print("Corners (in image coordinates):")
-        for j, point in enumerate(corner[0]):
-            print(f"Corner {j}: {point}")
-        # Optional: draw the tag
-        cv.polylines(img, [np.int32(corner)], True, (0, 255, 0), 2)
-
-    # === AprilTag pose estimation (PnP) ===
-    tag_size = 100/1000  # mm
-    object_points = np.array([
-        [-tag_size / 2, tag_size / 2, 0],
-        [tag_size / 2, tag_size / 2, 0],
-        [tag_size / 2, -tag_size / 2, 0],
-        [-tag_size / 2, -tag_size / 2, 0]
-    ], dtype=np.float32)
-
-    # Use the first detected tag
-    image_points = corners[0][0].astype(np.float32)
-
-    K = np.array([
-        [3162.6917917099686, 0, 2002.6217660372267],
-        [0, 3150.400818955349, 1564.6369336051791],
-        [0, 0, 1]
-    ], dtype=np.float32)
-
-    dist_coeffs = np.array([
-        0.041583647358609324,
-        -0.08065327514514421,
-        -0.0011864718361330247,
-        -0.0013845300296879428
-    ], dtype=np.float32)
-
-    success, rvec, tvec = cv.solvePnP(object_points, image_points, K,
-                                      dist_coeffs)
-
-    if success:
-        print("\nPose Estimation Successful!")
-        print("Rotation Vector:\n", rvec)
-        print("Translation Vector:\n", tvec)
-
-        # Convert rvec to rotation matrix
-        R, _ = cv.Rodrigues(rvec)
-
-        # Compose 4x4 transform matrix: T_tag_to_cam
-        # This transforms points from tag coordinate system to camera coordinate system
-        T_tag_to_cam = np.eye(4)
-        T_tag_to_cam[:3, :3] = R
-        T_tag_to_cam[:3, 3] = tvec.flatten()
-
-        print("\nTransformation Matrix (T_tag_to_cam):\n", T_tag_to_cam)
-    else:
-        print("solvePnP failed to estimate pose.")
-
-    # Show image with overlay
-    cv.imshow("Detected Tags", img)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
-
+    print(f"Detected AprilTags: {ids.flatten()}")
+    # cv2.aruco.drawDetectedMarkers(img, corners, ids)
+    # cv2.imshow('Detected AprilTags', img)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 else:
-    print("No AprilTags detected.")
+    print("No AprilTags detected. Please click 4 corners of the tag (top-left, top-right, bottom-right, bottom-left).")
 
-# Define the transform from camera to NeRF world
-# This should be determined by your calibration
-T_cam_to_nerf = np.array([
-    [-0.5815673, -0.65332876, -0.4847071, -1.38999609],
-    [0.08120135, -0.63947582, 0.76451097, 3.6932075],
-    [-0.80943547, 0.40525573, 0.42494942, -3.17019743],
-    [0, 0, 0, 1]
-])
+    manual_corners = []
 
-# Calculate tag position in NeRF world
-# First, transform from tag to camera, then from camera to NeRF
-T_tag_to_nerf = T_cam_to_nerf @ T_tag_to_cam
+    def click_event(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            manual_corners.append((x, y))
+            cv2.circle(img, (x, y), 5, (0, 0, 255), -1)
+            cv2.imshow('Manual Corner Selection', img)
 
-# For verification: tag is at origin in its own frame, where is this point in NeRF?
-tag_origin_in_nerf = T_tag_to_nerf @ np.array([0, 0, 0, 1])
-print("Tag origin in NeRF coordinates:", tag_origin_in_nerf)
+            if len(manual_corners) == 4:
+                print("\nManual corners (in order):")
+                for i, pt in enumerate(manual_corners):
+                    print(f"Corner {i+1}: {pt}")
+                cv2.destroyAllWindows()
 
 
-# CORRECTED look_at function
-def look_at(cam_pos, target, up):
-    # Calculate camera axes
-    forward = target - cam_pos  # Camera looks TOWARD target
-    forward = forward / np.linalg.norm(forward)
+    cv2.imshow('Manual Corner Selection', img)
+    cv2.setMouseCallback('Manual Corner Selection', click_event)
 
-    right = np.cross(forward, up)
-    right = right / np.linalg.norm(right)
+    # Wait until 4 corners are clicked
+    while True:
+        if len(manual_corners) == 4:
+            break
+        if cv2.waitKey(20) & 0xFF == 27:  # Esc to exit early
+            print("User exited before completing corner selection.")
+            exit()
 
-    camera_up = np.cross(right, forward)
-    camera_up = camera_up / np.linalg.norm(camera_up)
-
-    # Create camera-to-world matrix
-    c2w = np.eye(4)
-    c2w[:3, 0] = right
-    c2w[:3, 1] = camera_up
-    c2w[:3, 2] = -forward  # Negative because camera Z points backward
-    c2w[:3, 3] = cam_pos
-
-    return c2w
+    cv2.destroyAllWindows()
 
 
-# Define a viewpoint that's above the AprilTag in tag coordinate system
-height = 0.05  # meters
-cam_pos_tag = np.array([0, 0, height])  # Position above the tag
-target = np.array([0, 0, 0])  # Looking at the tag origin
-up = np.array([0, 1, 0])  # Y-axis is up
+# === AprilTag pose estimation (PnP) ===
+tag_size = 100 / 1000  # meters
+object_points = np.array([
+    [-tag_size / 2, tag_size / 2, 0],
+    [tag_size / 2, tag_size / 2, 0],
+    [tag_size / 2, -tag_size / 2, 0],
+    [-tag_size / 2, -tag_size / 2, 0]
+], dtype=np.float32)
 
-# Get camera-to-world transform in tag coordinate system
-c2w_tag = look_at(cam_pos_tag, target, up)
-print("Camera-to-world in tag coordinates:\n", c2w_tag)
+# Use detected or manually clicked image points
+if ids is not None and len(corners) > 0:
+    image_points = corners[0][0].astype(np.float32)
+elif len(manual_corners) == 4:
+    image_points = np.array(manual_corners, dtype=np.float32)
+else:
+    raise ValueError("Insufficient corner information for pose estimation.")
 
-# Transform to get camera-to-world in NeRF coordinates
-c2w_nerf = T_tag_to_nerf @ c2w_tag
-print("Camera-to-world in NeRF coordinates:\n", c2w_nerf)
+# Intrinsics and distortion from COLMAP
 
-# This c2w_nerf matrix can now be used for rendering or controlling the uArm
+
+w = 4032
+h = 3024
+fl_x = 3149.8205568434605
+fl_y = 3144.9052845897986
+cx =1988.5112210225268
+cy = 1510.91478762875
+k1 = 0.06181398164562204
+k2 = -0.09879480093473737
+p1 = -0.0002816293708418898
+p2 = 0.00048731735652577334
+
+K = np.array([
+    [fl_x, 0, cx ],
+    [0, fl_y, cy],
+    [0, 0, 1]])
+
+dist_coeffs = np.array([
+    k1,
+    k2,
+    p1,
+    p2
+], dtype=np.float32)
+
+# Pose estimation
+success, rvec, tvec = cv2.solvePnP(object_points, image_points, K, dist_coeffs)
+
+if not success:
+    raise RuntimeError("solvePnP failed to estimate pose.")
+
+# Convert rvec to 3x3 rotation matrix
+R, _ = cv2.Rodrigues(rvec)
+
+# 4x4 Transform from tag to camera
+tag2camera = np.eye(4)
+tag2camera[:3, :3] = R
+tag2camera[:3, 3] = tvec.flatten()
+print("\n transformation (output of pnp) -> tag_to_cam:\n", tag2camera)
+
+
+colmap_frame = np.array([
+                [
+                    -0.5687018073497259,
+                    -0.8220021370839751,
+                    0.029845283488904077,
+                    2.059857597959175
+                ],
+                [
+                    0.7514399503779359,
+                    -0.5044417340969084,
+                    0.42529582395940463,
+                    4.50265180004786
+                ],
+                [
+                    -0.3345388696297641,
+                    0.2642934420879218,
+                    0.9045621709844813,
+                    0.7833599092859005
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ]
+            ])
+
+
+# to try if it doesnt work: inverse of colmap frame here 
+world2colmap = np.linalg.inv(colmap_frame) @ tag2camera
+
+
+
+print('world to colmap transform', world2colmap)
+
+
+
+
+
+dataparser_transform = np.array([
+        [
+            0.17285069823265076,
+            0.8305922150611877,
+            -0.529376208782196,
+            -0.034270286560058594
+        ],
+        [
+            0.8236364126205444,
+            0.17285069823265076,
+            0.5401349067687988,
+            -0.33935973048210144
+        ],
+        [
+            0.5401349067687988,
+            -0.529376208782196,
+            -0.6542286276817322,
+            0.14749151468276978
+        ],
+        [
+            0,
+            0,
+            0, 
+            1]
+    ])
+
+scale = 0.20857019136345292
+
+
+
+applied_transform = np.array([
+    [0.0, 1.0, 0.0, 0.0],
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, -1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0]]
+    )
+
+
+# colmap_frame12[0:3, 1:3] *= -1
+colmap_frame = applied_transform @ world2colmap
+colmap_frame[:3, 3] *= scale
+
+world2nerf = dataparser_transform @ colmap_frame
+
+
+'''
+april tag is world origin --> w (0, 0, 0)
+
+pnp 
+    gives april tag pose in colmap coords
+    pnp retruns translation and R
+    convert R to rodrigues 
+    stack to give homogenous transform matrix
+
+world 2 colmap 
+    from json 
+
+get april tag location in colmap frame
+'''
